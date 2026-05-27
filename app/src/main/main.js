@@ -1366,7 +1366,7 @@ ipcMain.handle('check-for-updates', async () => {
 ipcMain.handle('download-update', async (event, { url, version }) => {
   const fs = require('fs');
   const https = require('https');
-  const { exec } = require('child_process');
+  const { spawn } = require('child_process');
   const os = require('os');
   const path = require('path');
   
@@ -1410,19 +1410,24 @@ ipcMain.handle('download-update', async (event, { url, version }) => {
         file.on('finish', () => {
           file.close();
           
-          // Execute installer and quit app
-          exec(`"${installerPath}"`, (err) => {
-            if (err) {
-              console.error('Failed to run installer:', err);
-              reject(err);
-            }
-          });
-          
-          setTimeout(() => {
-            app.quit();
-          }, 1000);
-          
-          resolve({ success: true });
+          try {
+            // Spawn the installer detached from OSLO so it remains alive after OSLO exits
+            const child = spawn(installerPath, [], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.unref();
+            
+            // Quit the app immediately so the installer can overwrite locked executable/resources
+            setTimeout(() => {
+              app.quit();
+            }, 500);
+            
+            resolve({ success: true });
+          } catch (err) {
+            console.error('Failed to spawn installer:', err);
+            reject(err);
+          }
         });
       }).on('error', (err) => {
         fs.unlink(installerPath, () => {});
