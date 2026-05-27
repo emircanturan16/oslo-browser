@@ -1417,7 +1417,7 @@ ipcMain.handle('download-update', async (event, { url, version }) => {
     // Quit the app immediately so the installer can overwrite locked executable/resources
     setTimeout(() => {
       app.quit();
-    }, 500);
+    }, 1500);
     
     return { success: true };
   } catch (err) {

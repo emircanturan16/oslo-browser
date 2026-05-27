@@ -43,6 +43,7 @@ export function sendBounds() {
   const isBookmarkEditOpen = bookmarkEditModal?.classList.contains('open');
   const isFolderCreateOpen = document.getElementById('folder-create-modal')?.classList.contains('open');
   const isUpdateOpen = document.getElementById('update-modal')?.classList.contains('open');
+  const isInstallingOpen = document.getElementById('installing-overlay')?.style.display === 'flex';
   const isTelemetryOpen = document.getElementById('telemetry-log-modal')?.classList.contains('open');
   const isPermissionsOpen = document.getElementById('permissions-manager-modal')?.classList.contains('open');
   const isPasswordAuditOpen = document.getElementById('password-audit-modal')?.classList.contains('open');
@@ -69,6 +70,7 @@ export function sendBounds() {
     isBookmarkEditOpen || 
     isFolderCreateOpen || 
     isUpdateOpen ||
+    isInstallingOpen ||
     isTelemetryOpen ||
     isPermissionsOpen ||
     isPasswordAuditOpen ||
@@ -1560,7 +1562,7 @@ document.getElementById('btn-cancel-update')?.addEventListener('click', closeUpd
 
 document.getElementById('btn-confirm-update')?.addEventListener('click', () => {
   const url = updateModal?.dataset.downloadUrl;
-  const version = document.getElementById('update-modal-version')?.textContent || '1.0.7';
+  const version = document.getElementById('update-modal-version')?.textContent || '1.0.8';
   
   if (!url) {
     window.oslo.openExternalLink('https://oslobrowser.com/download');
@@ -1597,9 +1599,27 @@ document.getElementById('btn-confirm-update')?.addEventListener('click', () => {
   // Start download
   window.oslo.downloadUpdate(url, version).then(() => {
     removeListener();
-    if (progressStatus) {
-      progressStatus.textContent = state.currentLang === 'tr' ? 'Kurulum başlıyor...' : 
-                                   (state.currentLang === 'fr' ? 'Lancement de l\'installation...' : 'Starting installation...');
+    
+    // Close the update modal
+    closeUpdateModalFunc();
+    
+    // Set up and show the full-screen installing overlay
+    const installingOverlay = document.getElementById('installing-overlay');
+    const installingTitle = document.getElementById('installing-title');
+    const installingDesc = document.getElementById('installing-desc');
+    
+    if (installingTitle) {
+      installingTitle.textContent = state.currentLang === 'tr' ? 'Güncelleme kuruluyor...' :
+                                   (state.currentLang === 'fr' ? 'Installation de la mise à jour...' : 'Installing update...');
+    }
+    if (installingDesc) {
+      installingDesc.textContent = state.currentLang === 'tr' ? 'Lütfen bekleyin, OSLO Browser güncelleniyor. Uygulama kurulum tamamlandıktan sonra otomatik olarak yeniden başlayacaktır.' :
+                                   (state.currentLang === 'fr' ? 'Veuillez patienter, OSLO Browser est en cours de mise à jour. L\'application redémarrera automatiquement une fois l\'installation terminée.' : 'Please wait, OSLO Browser is updating. The application will restart automatically after the installation completes.');
+    }
+    
+    if (installingOverlay) {
+      installingOverlay.style.display = 'flex';
+      sendBounds(); // Hide native webview bounds because installing overlay is visible!
     }
   }).catch(err => {
     console.error('Download failed:', err);
@@ -1619,6 +1639,32 @@ document.getElementById('btn-confirm-update')?.addEventListener('click', () => {
     }, 3000);
   });
 });
+
+// Auto check for updates on startup
+function autoCheckForUpdates() {
+  window.oslo.checkForUpdates().then(info => {
+    if (info && info.updateAvailable) {
+      const modalVersion = document.getElementById('update-modal-version');
+      const modalNotes = document.getElementById('update-modal-notes');
+      
+      if (modalVersion) modalVersion.textContent = info.latestVersion;
+      if (modalNotes) modalNotes.textContent = info.releaseNotes;
+
+      updateModal?.classList.add('open');
+      sendBounds();
+
+      // Store download URL in a data attribute
+      if (updateModal) {
+        updateModal.dataset.downloadUrl = info.downloadUrl;
+      }
+    }
+  }).catch(err => {
+    console.error('Auto update check failed:', err);
+  });
+}
+
+// Check on startup after a delay to ensure smooth initial page load
+setTimeout(autoCheckForUpdates, 1500);
 
 // --- Telemetry Diagnostics Modal ---
 function renderTelemetryLogs() {
