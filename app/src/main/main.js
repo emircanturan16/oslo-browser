@@ -1365,7 +1365,6 @@ ipcMain.handle('check-for-updates', async () => {
 
 ipcMain.handle('download-update', async (event, { url, version }) => {
   const fs = require('fs');
-  const https = require('https');
   const { spawn } = require('child_process');
   const os = require('os');
   const path = require('path');
@@ -1374,69 +1373,62 @@ ipcMain.handle('download-update', async (event, { url, version }) => {
   const tempDir = os.tmpdir();
   const installerPath = path.join(tempDir, `OSLO-Browser-${version}-Setup.exe`);
   
-  const file = fs.createWriteStream(installerPath);
-  
-  return new Promise((resolve, reject) => {
-    function download(downloadUrl) {
-      https.get(downloadUrl, {
-        headers: {
-          'User-Agent': 'oslo-browser-updater'
-        }
-      }, (response) => {
-        // Redirect
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          download(response.headers.location);
-          return;
-        }
-        
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download: status ${response.statusCode}`));
-          return;
-        }
-        
-        const totalSize = parseInt(response.headers['content-length'], 10);
-        let downloadedSize = 0;
-        
-        response.on('data', (chunk) => {
-          downloadedSize += chunk.length;
-          const progress = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('update-download-progress', { progress });
-          }
-        });
-        
-        response.pipe(file);
-        
-        file.on('finish', () => {
-          file.close();
-          
-          try {
-            // Spawn the installer detached from OSLO so it remains alive after OSLO exits
-            const child = spawn(installerPath, [], {
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.unref();
-            
-            // Quit the app immediately so the installer can overwrite locked executable/resources
-            setTimeout(() => {
-              app.quit();
-            }, 500);
-            
-            resolve({ success: true });
-          } catch (err) {
-            console.error('Failed to spawn installer:', err);
-            reject(err);
-          }
-        });
-      }).on('error', (err) => {
-        fs.unlink(installerPath, () => {});
-        reject(err);
-      });
+  try {
+    // Fetch automatically handles HTTP/HTTPS redirects out-of-the-box
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'oslo-browser-updater'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server returned status ${response.status}: ${response.statusText}`);
     }
     
-    download(url);
-  });
+    const file = fs.createWriteStream(installerPath);
+    const reader = response.body.getReader();
+    const totalSize = parseInt(response.headers.get('content-length'), 10) || 0;
+    let downloadedSize = 0;
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      
+      downloadedSize += value.length;
+      const progress = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('update-download-progress', { progress });
+      }
+      
+      file.write(Buffer.from(value));
+    }
+    
+    await new Promise((resolve) => file.end(resolve));
+    
+    // Spawn the installer detached from OSLO so it remains alive after OSLO exits
+    const child = spawn(installerPath, [], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+    
+    // Quit the app immediately so the installer can overwrite locked executable/resources
+    setTimeout(() => {
+      app.quit();
+    }, 500);
+    
+    return { success: true };
+  } catch (err) {
+    console.error('Update download failed:', err);
+    try {
+      if (fs.existsSync(installerPath)) {
+        fs.unlinkSync(installerPath);
+      }
+    } catch (e) {}
+    throw err;
+  }
 });
 
 ipcMain.handle('system-info-get', () => {

@@ -1,6 +1,6 @@
 {
   "name": "oslo-browser",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "OSLO Browser - Elegant Electron-based Custom Web Browser",
   "main": "src/main/main.js",
   "scripts": {
