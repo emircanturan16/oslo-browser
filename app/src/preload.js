@@ -927,6 +927,12 @@ contextBridge.exposeInMainWorld('oslo', {
 
   // Updates & Telemetry APIs
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: (url, version) => ipcRenderer.invoke('download-update', { url, version }),
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update-download-progress', listener);
+    return () => ipcRenderer.removeListener('update-download-progress', listener);
+  },
   logTelemetryEvent: (action, data) => ipcRenderer.send('telemetry-log-event', { action, data }),
   logTelemetryCrash: (error) => ipcRenderer.send('telemetry-log-crash', error),
   getTelemetryLogs: () => ipcRenderer.invoke('telemetry-get-logs'),

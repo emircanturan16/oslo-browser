@@ -1559,9 +1559,65 @@ document.getElementById('close-update-modal')?.addEventListener('click', closeUp
 document.getElementById('btn-cancel-update')?.addEventListener('click', closeUpdateModalFunc);
 
 document.getElementById('btn-confirm-update')?.addEventListener('click', () => {
-  const url = updateModal?.dataset.downloadUrl || 'https://oslobrowser.com/download';
-  window.oslo.openExternalLink(url);
-  closeUpdateModalFunc();
+  const url = updateModal?.dataset.downloadUrl;
+  const version = document.getElementById('update-modal-version')?.textContent || '1.0.2';
+  
+  if (!url) {
+    window.oslo.openExternalLink('https://oslobrowser.com/download');
+    closeUpdateModalFunc();
+    return;
+  }
+  
+  // Hide footer buttons & close button to prevent closing during download
+  const footer = updateModal.querySelector('.modal-footer');
+  if (footer) footer.style.display = 'none';
+  const closeBtn = document.getElementById('close-update-modal');
+  if (closeBtn) closeBtn.style.display = 'none';
+  
+  // Reset and show progress bar
+  const progressContainer = document.getElementById('update-progress-container');
+  const progressBar = document.getElementById('update-progress-bar');
+  const progressPercent = document.getElementById('update-progress-percent');
+  const progressStatus = document.getElementById('update-progress-status');
+  
+  if (progressBar) progressBar.style.width = '0%';
+  if (progressPercent) progressPercent.textContent = '0%';
+  if (progressStatus) {
+    progressStatus.textContent = state.currentLang === 'tr' ? 'Güncelleme indiriliyor...' : 
+                                 (state.currentLang === 'fr' ? 'Téléchargement de la mise à jour...' : 'Downloading update...');
+  }
+  if (progressContainer) progressContainer.style.display = 'flex';
+  
+  // Listen to progress
+  const removeListener = window.oslo.onUpdateDownloadProgress((data) => {
+    if (progressBar) progressBar.style.width = `${data.progress}%`;
+    if (progressPercent) progressPercent.textContent = `${data.progress}%`;
+  });
+  
+  // Start download
+  window.oslo.downloadUpdate(url, version).then(() => {
+    removeListener();
+    if (progressStatus) {
+      progressStatus.textContent = state.currentLang === 'tr' ? 'Kurulum başlıyor...' : 
+                                   (state.currentLang === 'fr' ? 'Lancement de l\'installation...' : 'Starting installation...');
+    }
+  }).catch(err => {
+    console.error('Download failed:', err);
+    removeListener();
+    
+    // Show error status
+    if (progressStatus) {
+      progressStatus.textContent = state.currentLang === 'tr' ? 'İndirme hatası!' : 
+                                   (state.currentLang === 'fr' ? 'Erreur de téléchargement!' : 'Download failed!');
+    }
+    
+    // Restore footer buttons & close button so they can retry or cancel
+    setTimeout(() => {
+      if (footer) footer.style.display = 'flex';
+      if (closeBtn) closeBtn.style.display = 'block';
+      if (progressContainer) progressContainer.style.display = 'none';
+    }, 3000);
+  });
 });
 
 // --- Telemetry Diagnostics Modal ---

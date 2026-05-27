@@ -1363,6 +1363,77 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+ipcMain.handle('download-update', async (event, { url, version }) => {
+  const fs = require('fs');
+  const https = require('https');
+  const { exec } = require('child_process');
+  const os = require('os');
+  const path = require('path');
+  
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const tempDir = os.tmpdir();
+  const installerPath = path.join(tempDir, `OSLO-Browser-${version}-Setup.exe`);
+  
+  const file = fs.createWriteStream(installerPath);
+  
+  return new Promise((resolve, reject) => {
+    function download(downloadUrl) {
+      https.get(downloadUrl, {
+        headers: {
+          'User-Agent': 'oslo-browser-updater'
+        }
+      }, (response) => {
+        // Redirect
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          download(response.headers.location);
+          return;
+        }
+        
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: status ${response.statusCode}`));
+          return;
+        }
+        
+        const totalSize = parseInt(response.headers['content-length'], 10);
+        let downloadedSize = 0;
+        
+        response.on('data', (chunk) => {
+          downloadedSize += chunk.length;
+          const progress = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('update-download-progress', { progress });
+          }
+        });
+        
+        response.pipe(file);
+        
+        file.on('finish', () => {
+          file.close();
+          
+          // Execute installer and quit app
+          exec(`"${installerPath}"`, (err) => {
+            if (err) {
+              console.error('Failed to run installer:', err);
+              reject(err);
+            }
+          });
+          
+          setTimeout(() => {
+            app.quit();
+          }, 1000);
+          
+          resolve({ success: true });
+        });
+      }).on('error', (err) => {
+        fs.unlink(installerPath, () => {});
+        reject(err);
+      });
+    }
+    
+    download(url);
+  });
+});
+
 ipcMain.handle('system-info-get', () => {
   const os = require('os');
   return {
